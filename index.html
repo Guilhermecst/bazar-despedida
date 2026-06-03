@@ -809,6 +809,7 @@
       else if (currentFilter==='reserved') { if (i.status!=='reserved') return false; }
       else if (currentFilter==='sold') { if (i.status!=='sold') return false; }
       else if (currentFilter==='donation') { if (!(i.donation && i.status!=='sold')) return false; }
+      else if (currentFilter==='all') { if (i.status==='sold') return false; }
       if (selectedCategory && i.category !== selectedCategory) return false;
       if (searchQuery) {
         const haystack = (i.name + ' ' + (i.description || '') + ' ' + i.category).toLowerCase();
