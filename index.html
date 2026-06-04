@@ -578,10 +578,6 @@
 
 <footer>
   <strong style="color:#fff">Bazar de Despedida</strong> · Negociações via WhatsApp · Feito com 💜
-  <div class="visit-stat" style="display:none; align-items:center; gap:6px; margin-top:10px; font-size:12px; color:rgba(255,255,255,0.5); font-weight:600; justify-content:center;">
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-    <span id="visitCount">—</span> visitas únicas
-  </div>
 </footer>
 
 <script>
@@ -1103,45 +1099,6 @@
       if (ws) ws.close();
     });
   }
-
-  // ── TOTAL DE ACESSOS ──────────────────────────────────────────────────────
-  const VIEWS_API = `${SUPABASE_URL}/rest/v1/page_views`;
-  const VIEWS_HEADERS = { ...HEADERS, 'Prefer': 'return=representation,resolution=merge-duplicates' };
-
-  async function trackAndShowVisits() {
-    const visitorId = sessionStorage.getItem('bazar_vid') || 'anon';
-
-    try {
-      // Registra visita (upsert por chave primária visitor_id + page)
-      await fetch(VIEWS_API, {
-        method: 'POST',
-        headers: { ...HEADERS, 'Prefer': 'resolution=merge-duplicates' },
-        body: JSON.stringify({ page: 'bazar', visitor_id: visitorId })
-      });
-
-      // Busca total com count=exact — header Prefer isolado
-      const countRes = await fetch(`${VIEWS_API}?select=visitor_id&page=eq.bazar`, {
-        headers: { ...HEADERS, 'Prefer': 'count=exact' }
-      });
-
-      const range = countRes.headers.get('content-range'); // ex: "0-8/9"
-      const total = range ? parseInt(range.split('/')[1]) : null;
-      if (total !== null && !isNaN(total)) updateVisitCount(total);
-    } catch (e) {
-      // Silencioso — não crítico
-    }
-  }
-
-  function updateVisitCount(n) {
-    const el = document.getElementById('visitCount');
-    if (el) {
-      el.textContent = n.toLocaleString('pt-BR');
-      el.closest('.visit-stat')?.style.setProperty('display', 'flex');
-    }
-  }
-
-  initPresence();
-  trackAndShowVisits();
   loadItems();
 </script>
 </body>
