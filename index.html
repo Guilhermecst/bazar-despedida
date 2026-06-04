@@ -303,6 +303,8 @@
   .admin-controls { display: none; padding: 0 18px 14px; gap: 6px; flex-wrap: wrap; border-top: 1.5px solid var(--border); padding-top: 10px; margin-top: 4px; }
   .admin-mode .admin-controls { display: flex; }
   .btn-sm { font-family: 'Nunito', sans-serif; font-size: 11px; padding: 5px 11px; border-radius: 50px; cursor: pointer; border: 2px solid; transition: all 0.18s; font-weight: 800; }
+  .btn-edit { border-color: #C7D2FE; color: #4F46E5; background: transparent; }
+  .btn-edit:hover { background: #EEF2FF; }
   .btn-avail { border-color: #A8DDD0; color: var(--donation); background: transparent; }
   .btn-avail:hover { background: var(--donation-bg); }
   .btn-reserv { border-color: #F5C842; color: var(--gold); background: transparent; }
@@ -391,6 +393,66 @@
   <div class="detail-box" id="detailBox">
     <button class="detail-close" onclick="closeDetail()">✕</button>
     <div id="detailContent"></div>
+  </div>
+</div>
+
+<!-- EDIT MODAL -->
+<div class="modal-overlay" id="editModal" onclick="onEditOverlayClick(event)">
+  <div class="pwd-box" style="max-width:520px;width:100%">
+    <h3>✏️ Editar item</h3>
+    <input type="hidden" id="editId">
+    <div class="form-grid" style="margin-top:14px">
+      <div class="form-group full">
+        <label>Foto do item</label>
+        <div class="img-upload-area" id="editUploadArea" onclick="document.getElementById('editImgInput').click()" style="cursor:pointer">
+          <input type="file" accept="image/*" id="editImgInput" style="display:none" onchange="previewEditImage(event)">
+          <img class="img-preview" id="editImgPreview" style="display:none">
+          <p id="editUploadHint">📷 Clique para trocar a foto</p>
+          <span id="editUploadSub">JPG, PNG, WEBP</span>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Nome do item *</label>
+        <input type="text" id="editName" placeholder="Ex: Sofá 3 lugares">
+      </div>
+      <div class="form-group">
+        <label>Categoria</label>
+        <select id="editCategory">
+          <option value="Móvel">Móvel</option>
+          <option value="Eletrodoméstico">Eletrodoméstico</option>
+          <option value="Eletrônico">Eletrônico</option>
+          <option value="Decoração">Decoração</option>
+          <option value="Cozinha">Cozinha</option>
+          <option value="Cama & Banho">Cama & Banho</option>
+          <option value="Outro">Outro</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>WhatsApp (com DDD)</label>
+        <input type="tel" id="editPhone" placeholder="Ex: 11 99999-9999">
+      </div>
+      <div class="form-group full">
+        <div class="donation-row">
+          <label class="toggle-switch">
+            <input type="checkbox" id="editDonationToggle" onchange="onEditDonationChange()">
+            <span class="toggle-slider"></span>
+          </label>
+          <span class="dlabel" onclick="document.getElementById('editDonationToggle').click()">🤝 Este item é uma doação</span>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Preço (R$)</label>
+        <input type="text" id="editPrice" placeholder="Ex: 450">
+      </div>
+      <div class="form-group">
+        <label>Descrição</label>
+        <textarea id="editDesc" placeholder="Estado, medidas, detalhes..."></textarea>
+      </div>
+    </div>
+    <div class="modal-actions" style="margin-top:20px">
+      <button class="btn-primary" onclick="saveEdit()">Salvar alterações ✓</button>
+      <button class="btn-ghost" onclick="closeEditModal()">Cancelar</button>
+    </div>
   </div>
 </div>
 
@@ -839,6 +901,7 @@
         : `<div class="card-price">R$ ${item.price}</div>`;
       const statusTag = sold ? `<span class="card-tag">Vendido 😢</span>` : reserved ? `<span class="card-tag">Reservado ⏳</span>` : `<span class="card-tag">ver mais →</span>`;
       const adminBtns = [
+        `<button class="btn-sm btn-edit" onclick="event.stopPropagation();openEditModal(${item.id})">✏️ Editar</button>`,
         item.status!=='available' ? `<button class="btn-sm btn-avail" onclick="event.stopPropagation();setStatus(${item.id},'available')">✓ Disponível</button>` : '',
         item.status!=='reserved'  ? `<button class="btn-sm btn-reserv" onclick="event.stopPropagation();setStatus(${item.id},'reserved')">⏳ Reservado</button>` : '',
         item.status!=='sold'      ? `<button class="btn-sm btn-sold"   onclick="event.stopPropagation();setStatus(${item.id},'sold')">✗ Vendido</button>` : '',
@@ -857,6 +920,91 @@
           <div class="admin-controls">${adminBtns}</div>
         </div>`;
     }).join('');
+  }
+
+  // ── EDIT MODAL ────────────────────────────────────────────────────────────
+  let editImgData = null;
+
+  function openEditModal(id) {
+    const item = items.find(i => i.id === id);
+    if (!item) return;
+    editImgData = null;
+    document.getElementById('editId').value = id;
+    document.getElementById('editName').value = item.name || '';
+    document.getElementById('editCategory').value = item.category || 'Outro';
+    document.getElementById('editPhone').value = item.phone || '';
+    document.getElementById('editPrice').value = item.price || '';
+    document.getElementById('editDesc').value = item.description || '';
+    document.getElementById('editDonationToggle').checked = !!item.donation;
+    onEditDonationChange();
+    const preview = document.getElementById('editImgPreview');
+    const hint = document.getElementById('editUploadHint');
+    const sub = document.getElementById('editUploadSub');
+    if (item.image) {
+      preview.src = item.image;
+      preview.style.display = 'block';
+      hint.style.display = 'none';
+      sub.style.display = 'none';
+    } else {
+      preview.style.display = 'none';
+      hint.style.display = '';
+      sub.style.display = '';
+    }
+    document.getElementById('editModal').classList.add('open');
+  }
+
+  function closeEditModal() {
+    document.getElementById('editModal').classList.remove('open');
+    editImgData = null;
+  }
+
+  function onEditOverlayClick(e) {
+    if (e.target === document.getElementById('editModal')) closeEditModal();
+  }
+
+  function onEditDonationChange() {
+    const isDonation = document.getElementById('editDonationToggle').checked;
+    document.getElementById('editPrice').disabled = isDonation;
+    if (isDonation) document.getElementById('editPrice').value = '';
+  }
+
+  function previewEditImage(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      editImgData = ev.target.result;
+      const preview = document.getElementById('editImgPreview');
+      preview.src = editImgData;
+      preview.style.display = 'block';
+      document.getElementById('editUploadHint').style.display = 'none';
+      document.getElementById('editUploadSub').style.display = 'none';
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function saveEdit() {
+    const id = parseInt(document.getElementById('editId').value);
+    const name = document.getElementById('editName').value.trim();
+    if (!name) { alert('O nome do item é obrigatório.'); return; }
+    const updates = {
+      name,
+      category:    document.getElementById('editCategory').value,
+      phone:       document.getElementById('editPhone').value.trim(),
+      price:       document.getElementById('editPrice').value.trim(),
+      description: document.getElementById('editDesc').value.trim(),
+      donation:    document.getElementById('editDonationToggle').checked,
+    };
+    if (editImgData) updates.image = editImgData;
+    setSyncStatus('syncing', 'Salvando...');
+    try {
+      await updateItem(id, updates);
+      const item = items.find(i => i.id === id);
+      if (item) Object.assign(item, updates);
+      setSyncStatus('ok', 'Salvo ✓');
+      closeEditModal();
+      render();
+    } catch (e) { setSyncStatus('error', 'Erro ao salvar'); }
   }
 
   loadItems();
