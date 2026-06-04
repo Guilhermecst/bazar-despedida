@@ -735,31 +735,18 @@
   }
 
   async function loadItems() {
-    const MAX_ATTEMPTS = 3;
-    const DELAY = 2000; // 2s entre tentativas
-
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      if (attempt === 1) {
-        setSyncStatus('syncing', 'Carregando...');
-        showSkeleton();
-      } else {
-        setSyncStatus('syncing', `Tentando novamente (${attempt}/${MAX_ATTEMPTS})...`);
-        await new Promise(r => setTimeout(r, DELAY));
-      }
-      try {
-        const res = await fetch(`${API}?order=created_at.desc`, { headers: HEADERS });
-        if (!res.ok) throw new Error(await res.text());
-        items = await res.json();
-        setSyncStatus('ok', 'Sincronizado ✓');
-        render();
-        return;
-      } catch (e) {
-        console.warn(`Tentativa ${attempt} falhou:`, e);
-        if (attempt === MAX_ATTEMPTS) {
-          setSyncStatus('error', 'Erro ao carregar');
-          showError();
-        }
-      }
+    setSyncStatus('syncing', 'Carregando...');
+    showSkeleton();
+    try {
+      const res = await fetch(`${API}?order=created_at.desc`, { headers: HEADERS });
+      if (!res.ok) throw new Error(await res.text());
+      items = await res.json();
+      setSyncStatus('ok', 'Sincronizado ✓');
+      render();
+    } catch (e) {
+      console.error(e);
+      setSyncStatus('error', 'Erro ao carregar');
+      showError();
     }
   }
 
@@ -1122,24 +1109,24 @@
   const VIEWS_HEADERS = { ...HEADERS, 'Prefer': 'return=representation,resolution=merge-duplicates' };
 
   async function trackAndShowVisits() {
-    const sessionKey = 'bazar_tracked';
-    const visitorId  = sessionStorage.getItem('bazar_vid') || 'anon';
+    const visitorId = sessionStorage.getItem('bazar_vid') || 'anon';
 
     try {
-      // Upsert: incrementa contador ou insere linha nova
-      const upsertRes = await fetch(VIEWS_API, {
+      // Registra visita (upsert por chave primária visitor_id + page)
+      await fetch(VIEWS_API, {
         method: 'POST',
-        headers: { ...VIEWS_HEADERS, 'Prefer': 'return=representation,resolution=merge-duplicates' },
+        headers: { ...HEADERS, 'Prefer': 'resolution=merge-duplicates' },
         body: JSON.stringify({ page: 'bazar', visitor_id: visitorId })
       });
 
-      // Independente do upsert, busca total de acessos distintos
+      // Busca total com count=exact — header Prefer isolado
       const countRes = await fetch(`${VIEWS_API}?select=visitor_id&page=eq.bazar`, {
-        headers: { ...HEADERS, 'Prefer': 'count=exact', 'Range-Unit': 'items', 'Range': '0-0' }
+        headers: { ...HEADERS, 'Prefer': 'count=exact' }
       });
 
-      const total = countRes.headers.get('content-range')?.split('/')[1];
-      if (total) updateVisitCount(parseInt(total));
+      const range = countRes.headers.get('content-range'); // ex: "0-8/9"
+      const total = range ? parseInt(range.split('/')[1]) : null;
+      if (total !== null && !isNaN(total)) updateVisitCount(total);
     } catch (e) {
       // Silencioso — não crítico
     }
