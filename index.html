@@ -217,6 +217,9 @@
   .sync-dot.error { background: var(--red); }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
+  .online-indicator { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text2); font-weight: 700; }
+  .online-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex-shrink: 0; animation: pulse 2s infinite; }
+
   /* ── SEARCH & CATEGORY ── */
   .search-bar { max-width: 1100px; margin: 28px auto 0; padding: 0 32px; display: flex; gap: 12px; flex-wrap: wrap; }
   .search-input-wrap { position: relative; flex: 1; min-width: 220px; }
@@ -471,6 +474,11 @@
       <div class="stat"><strong id="soldCount">—</strong>&nbsp;vendidos</div>
     </div>
     <div class="sync-status">
+      <div class="online-indicator" id="onlineIndicator" style="display:none">
+        <div class="online-dot"></div>
+        <span id="onlineCount">1</span>&nbsp;online
+        <div class="stat-divider" style="margin: 0 4px"></div>
+      </div>
       <div class="sync-dot" id="syncDot"></div>
       <span id="syncMsg">Carregando...</span>
     </div>
@@ -570,6 +578,10 @@
 
 <footer>
   <strong style="color:#fff">Bazar de Despedida</strong> · Negociações via WhatsApp · Feito com 💜
+  <div class="visit-stat" style="display:none; align-items:center; gap:6px; margin-top:10px; font-size:12px; color:rgba(255,255,255,0.5); font-weight:600; justify-content:center;">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    <span id="visitCount">—</span> visitas únicas
+  </div>
 </footer>
 
 <script>
@@ -723,18 +735,31 @@
   }
 
   async function loadItems() {
-    setSyncStatus('syncing', 'Carregando...');
-    showSkeleton();
-    try {
-      const res = await fetch(`${API}?order=created_at.desc`, { headers: HEADERS });
-      if (!res.ok) throw new Error(await res.text());
-      items = await res.json();
-      setSyncStatus('ok', 'Sincronizado ✓');
-      render();
-    } catch (e) {
-      console.error(e);
-      setSyncStatus('error', 'Erro ao carregar');
-      showError();
+    const MAX_ATTEMPTS = 3;
+    const DELAY = 2000; // 2s entre tentativas
+
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      if (attempt === 1) {
+        setSyncStatus('syncing', 'Carregando...');
+        showSkeleton();
+      } else {
+        setSyncStatus('syncing', `Tentando novamente (${attempt}/${MAX_ATTEMPTS})...`);
+        await new Promise(r => setTimeout(r, DELAY));
+      }
+      try {
+        const res = await fetch(`${API}?order=created_at.desc`, { headers: HEADERS });
+        if (!res.ok) throw new Error(await res.text());
+        items = await res.json();
+        setSyncStatus('ok', 'Sincronizado ✓');
+        render();
+        return;
+      } catch (e) {
+        console.warn(`Tentativa ${attempt} falhou:`, e);
+        if (attempt === MAX_ATTEMPTS) {
+          setSyncStatus('error', 'Erro ao carregar');
+          showError();
+        }
+      }
     }
   }
 
@@ -1007,6 +1032,129 @@
     } catch (e) { setSyncStatus('error', 'Erro ao salvar'); }
   }
 
+  // ── PRESENCE (visitantes online em tempo real) ────────────────────────────
+  function initPresence() {
+    const visitorId = (sessionStorage.getItem('bazar_vid') || (() => {
+      const id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      sessionStorage.setItem('bazar_vid', id);
+      return id;
+    })());
+
+    let ws, heartbeatTimer, presence = {}, reconnectTimer;
+
+    const REALTIME_URL = SUPABASE_URL.replace('https://', 'wss://') +
+      '/realtime/v1/websocket?apikey=' + SUPABASE_KEY + '&vsn=1.0.0';
+
+    function send(msg) {
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+    }
+
+    function updateUI() {
+      const count = Object.keys(presence).length;
+      const el = document.getElementById('onlineIndicator');
+      document.getElementById('onlineCount').textContent = count;
+      el.style.display = count > 0 ? 'flex' : 'none';
+    }
+
+    function connect() {
+      clearTimeout(reconnectTimer);
+      try { ws = new WebSocket(REALTIME_URL); } catch(e) { return; }
+
+      ws.onopen = () => {
+        // Join presence channel
+        send({
+          topic: 'realtime:bazar-presence',
+          event: 'phx_join',
+          payload: {
+            config: { presence: { key: visitorId }, broadcast: { self: false } },
+            access_token: SUPABASE_KEY
+          },
+          ref: '1'
+        });
+        heartbeatTimer = setInterval(() =>
+          send({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: 'hb' }), 25000);
+      };
+
+      ws.onmessage = ({ data }) => {
+        let msg;
+        try { msg = JSON.parse(data); } catch { return; }
+
+        // Channel joined — broadcast our presence
+        if (msg.event === 'phx_reply' && msg.ref === '1' && msg.payload?.status === 'ok') {
+          send({
+            topic: 'realtime:bazar-presence',
+            event: 'presence',
+            payload: { type: 'track', key: visitorId, payload: { t: Date.now() } },
+            ref: '2'
+          });
+        }
+        // Full state snapshot
+        if (msg.event === 'presence_state') {
+          presence = {};
+          Object.entries(msg.payload || {}).forEach(([k, v]) => { presence[k] = v; });
+          updateUI();
+        }
+        // Delta updates
+        if (msg.event === 'presence_diff') {
+          Object.entries(msg.payload?.joins || {}).forEach(([k, v]) => { presence[k] = v; });
+          Object.keys(msg.payload?.leaves || {}).forEach(k => delete presence[k]);
+          updateUI();
+        }
+      };
+
+      ws.onerror = () => {};
+      ws.onclose = () => {
+        clearInterval(heartbeatTimer);
+        reconnectTimer = setTimeout(connect, 4000);
+      };
+    }
+
+    connect();
+    window.addEventListener('beforeunload', () => {
+      clearTimeout(reconnectTimer);
+      clearInterval(heartbeatTimer);
+      if (ws) ws.close();
+    });
+  }
+
+  // ── TOTAL DE ACESSOS ──────────────────────────────────────────────────────
+  const VIEWS_API = `${SUPABASE_URL}/rest/v1/page_views`;
+  const VIEWS_HEADERS = { ...HEADERS, 'Prefer': 'return=representation,resolution=merge-duplicates' };
+
+  async function trackAndShowVisits() {
+    const sessionKey = 'bazar_tracked';
+    const visitorId  = sessionStorage.getItem('bazar_vid') || 'anon';
+
+    try {
+      // Upsert: incrementa contador ou insere linha nova
+      const upsertRes = await fetch(VIEWS_API, {
+        method: 'POST',
+        headers: { ...VIEWS_HEADERS, 'Prefer': 'return=representation,resolution=merge-duplicates' },
+        body: JSON.stringify({ page: 'bazar', visitor_id: visitorId })
+      });
+
+      // Independente do upsert, busca total de acessos distintos
+      const countRes = await fetch(`${VIEWS_API}?select=visitor_id&page=eq.bazar`, {
+        headers: { ...HEADERS, 'Prefer': 'count=exact', 'Range-Unit': 'items', 'Range': '0-0' }
+      });
+
+      const total = countRes.headers.get('content-range')?.split('/')[1];
+      if (total) updateVisitCount(parseInt(total));
+    } catch (e) {
+      // Silencioso — não crítico
+    }
+  }
+
+  function updateVisitCount(n) {
+    const el = document.getElementById('visitCount');
+    if (el) {
+      el.textContent = n.toLocaleString('pt-BR');
+      el.closest('.visit-stat')?.style.setProperty('display', 'flex');
+    }
+  }
+
+  initPresence();
+  trackAndShowVisits();
   loadItems();
 </script>
 </body>
