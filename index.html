@@ -29,9 +29,7 @@
     --donation-bg:   #E6FAF4;
     --red:           #E8394A;
     --reserved-bg:   #FFF8EC;
-  }
-
-  /* ── BAZAR SAGUI ── */
+  } 
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: var(--bg); color: var(--text); font-family: 'Nunito', sans-serif; min-height: 100vh; }
@@ -218,6 +216,9 @@
   .sync-dot.ok { background: var(--green); }
   .sync-dot.error { background: var(--red); }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  .online-indicator { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text2); font-weight: 700; }
+  .online-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex-shrink: 0; animation: pulse 2s infinite; }
 
   /* ── SEARCH & CATEGORY ── */
   .search-bar { max-width: 1100px; margin: 28px auto 0; padding: 0 32px; display: flex; gap: 12px; flex-wrap: wrap; }
@@ -473,7 +474,9 @@
       <div class="stat"><strong id="soldCount">—</strong>&nbsp;vendidos</div>
     </div>
     <div class="sync-status">
-<span id="onlineCount">1</span>&nbsp;online
+      <div class="online-indicator" id="onlineIndicator" style="display:none">
+        <div class="online-dot"></div>
+        <span id="onlineCount">1</span>&nbsp;online
         <div class="stat-divider" style="margin: 0 4px"></div>
       </div>
       <div class="sync-dot" id="syncDot"></div>
@@ -578,44 +581,11 @@
 </footer>
 
 <script>
-  // ── FIREBASE ─────────────────────────────────────────────────────────────
-  const FB_PROJECT = 'bazar-da-mudanca';
-  const FB_API_KEY = 'AIzaSyC7AG0JX29yonRqC39JDqO3B6ytenFKgOY';
-  const FB_BASE    = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents`;
-  let   FB_TOKEN   = null;
-
-  async function getToken() {
-    if (FB_TOKEN && FB_TOKEN.expires > Date.now() + 5000) return FB_TOKEN.token;
-    const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FB_API_KEY}`, {
-      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({returnSecureToken:true})
-    });
-    if (!r.ok) throw new Error('Auth failed: ' + await r.text());
-    const d = await r.json();
-    if (!d.idToken) throw new Error('No token: ' + JSON.stringify(d));
-    FB_TOKEN = { token: d.idToken, expires: Date.now() + (parseInt(d.expiresIn)-60)*1000 };
-    return FB_TOKEN.token;
-  }
-
-  // Firestore field value helpers
-  function toFS(obj) {
-    const fields = {};
-    for (const [k,v] of Object.entries(obj)) {
-      if (v === null || v === undefined) fields[k] = {nullValue: null};
-      else if (typeof v === 'boolean')   fields[k] = {booleanValue: v};
-      else if (typeof v === 'number')    fields[k] = {integerValue: v};
-      else                               fields[k] = {stringValue: String(v)};
-    }
-    return {fields};
-  }
-  function fromFS(doc) {
-    const obj = { id: doc.name.split('/').pop(), _path: doc.name };
-    for (const [k,v] of Object.entries(doc.fields||{})) {
-      obj[k] = v.stringValue ?? v.booleanValue ?? v.integerValue ?? v.nullValue ?? null;
-    }
-    // created_at: use document createTime if missing
-    if (!obj.created_at) obj.created_at = doc.createTime;
-    return obj;
-  }
+  const SUPABASE_URL = 'https://kltroavqbvvtbbleodhw.supabase.co';
+  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtsdHJvYXZxYnZ2dGJibGVvZGh3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5NTM5OTQsImV4cCI6MjA5NDUyOTk5NH0.LpznYnchhnqQpreQuCnzklyAo0iAZq6gbgm5WcFizmg';
+  const TABLE = 'items';
+  const API = `${SUPABASE_URL}/rest/v1/${TABLE}`;
+  const HEADERS = { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Prefer': 'return=representation' };
   const ADMIN_HASH = '6e7d797a6c60d9543aa762b016c3b28f4dcaccbc62f8d81a3603c6c0fa376509';
   const WA_SVG = `<svg viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.125.557 4.122 1.528 5.856L.057 23.999l6.304-1.453A11.944 11.944 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.818 9.818 0 01-5.013-1.375l-.36-.214-3.735.861.882-3.638-.234-.374A9.815 9.815 0 012.182 12c0-5.417 4.401-9.818 9.818-9.818 5.418 0 9.819 4.401 9.819 9.818 0 5.418-4.401 9.818-9.819 9.818z"/></svg>`;
 
@@ -754,7 +724,7 @@
     if (document.getElementById('passwordModal').classList.contains('open')) { closePasswordModal(); }
   });
 
-  // ── FIREBASE DB ─────────────────────────────────────────────────────────
+  // ── SUPABASE ──────────────────────────────────────────────────────────────
   function setSyncStatus(state, msg) {
     document.getElementById('syncDot').className = 'sync-dot ' + state;
     document.getElementById('syncMsg').textContent = msg;
@@ -764,14 +734,9 @@
     setSyncStatus('syncing', 'Carregando...');
     showSkeleton();
     try {
-      const token = await getToken();
-      const res = await fetch(`${FB_BASE}/items?pageSize=200`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const res = await fetch(`${API}?order=created_at.desc`, { headers: HEADERS });
       if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      const docs = data.documents || [];
-      items = docs.map(fromFS).sort((a,b) => (b.created_at||'').localeCompare(a.created_at||''));
+      items = await res.json();
       setSyncStatus('ok', 'Sincronizado ✓');
       render();
     } catch (e) {
@@ -782,35 +747,18 @@
   }
 
   async function insertItem(item) {
-    const token = await getToken();
-    const res = await fetch(`${FB_BASE}/items`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(toFS(item))
-    });
+    const res = await fetch(API, { method: 'POST', headers: HEADERS, body: JSON.stringify(item) });
     if (!res.ok) throw new Error(await res.text());
-    const doc = await res.json();
-    return fromFS(doc);
+    return (await res.json())[0];
   }
 
   async function updateItem(id, patch) {
-    const token = await getToken();
-    const fields = toFS(patch).fields;
-    const updateMask = Object.keys(fields).map(k => `updateMask.fieldPaths=${k}`).join('&');
-    const res = await fetch(`${FB_BASE}/items/${id}?${updateMask}`, {
-      method: 'PATCH',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({fields})
-    });
+    const res = await fetch(`${API}?id=eq.${id}`, { method: 'PATCH', headers: HEADERS, body: JSON.stringify(patch) });
     if (!res.ok) throw new Error(await res.text());
   }
 
   async function deleteItemDB(id) {
-    const token = await getToken();
-    const res = await fetch(`${FB_BASE}/items/${id}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
+    const res = await fetch(`${API}?id=eq.${id}`, { method: 'DELETE', headers: HEADERS });
     if (!res.ok) throw new Error(await res.text());
   }
 
@@ -1044,7 +992,7 @@
   }
 
   async function saveEdit() {
-    const id = document.getElementById('editId').value;
+    const id = parseInt(document.getElementById('editId').value);
     const name = document.getElementById('editName').value.trim();
     if (!name) { alert('O nome do item é obrigatório.'); return; }
     const updates = {
@@ -1067,8 +1015,90 @@
     } catch (e) { setSyncStatus('error', 'Erro ao salvar'); }
   }
 
-  // ── PRESENCE (online agora via Firebase RTDB) ────────────────────────────
-  loadItems();
+  // ── PRESENCE (visitantes online em tempo real) ────────────────────────────
+  function initPresence() {
+    const visitorId = (sessionStorage.getItem('bazar_vid') || (() => {
+      const id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      sessionStorage.setItem('bazar_vid', id);
+      return id;
+    })());
+
+    let ws, heartbeatTimer, presence = {}, reconnectTimer;
+
+    const REALTIME_URL = SUPABASE_URL.replace('https://', 'wss://') +
+      '/realtime/v1/websocket?apikey=' + SUPABASE_KEY + '&vsn=1.0.0';
+
+    function send(msg) {
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+    }
+
+    function updateUI() {
+      const count = Object.keys(presence).length;
+      const el = document.getElementById('onlineIndicator');
+      document.getElementById('onlineCount').textContent = count;
+      el.style.display = count > 0 ? 'flex' : 'none';
+    }
+
+    function connect() {
+      clearTimeout(reconnectTimer);
+      try { ws = new WebSocket(REALTIME_URL); } catch(e) { return; }
+
+      ws.onopen = () => {
+        // Join presence channel
+        send({
+          topic: 'realtime:bazar-presence',
+          event: 'phx_join',
+          payload: {
+            config: { presence: { key: visitorId }, broadcast: { self: false } },
+            access_token: SUPABASE_KEY
+          },
+          ref: '1'
+        });
+        heartbeatTimer = setInterval(() =>
+          send({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: 'hb' }), 25000);
+      };
+
+      ws.onmessage = ({ data }) => {
+        let msg;
+        try { msg = JSON.parse(data); } catch { return; }
+
+        // Channel joined — broadcast our presence
+        if (msg.event === 'phx_reply' && msg.ref === '1' && msg.payload?.status === 'ok') {
+          send({
+            topic: 'realtime:bazar-presence',
+            event: 'presence',
+            payload: { type: 'track', key: visitorId, payload: { t: Date.now() } },
+            ref: '2'
+          });
+        }
+        // Full state snapshot
+        if (msg.event === 'presence_state') {
+          presence = {};
+          Object.entries(msg.payload || {}).forEach(([k, v]) => { presence[k] = v; });
+          updateUI();
+        }
+        // Delta updates
+        if (msg.event === 'presence_diff') {
+          Object.entries(msg.payload?.joins || {}).forEach(([k, v]) => { presence[k] = v; });
+          Object.keys(msg.payload?.leaves || {}).forEach(k => delete presence[k]);
+          updateUI();
+        }
+      };
+
+      ws.onerror = () => {};
+      ws.onclose = () => {
+        clearInterval(heartbeatTimer);
+        reconnectTimer = setTimeout(connect, 4000);
+      };
+    }
+
+    connect();
+    window.addEventListener('beforeunload', () => {
+      clearTimeout(reconnectTimer);
+      clearInterval(heartbeatTimer);
+      if (ws) ws.close();
+    });
+  }
   loadItems();
 </script>
 </body>
