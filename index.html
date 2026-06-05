@@ -581,8 +581,13 @@
 </footer>
 
 <script>
-  const SUPABASE_URL = 'https://kltroavqbvvtbbleodhw.supabase.co';
-  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtsdHJvYXZxYnZ2dGJibGVvZGh3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5NTM5OTQsImV4cCI6MjA5NDUyOTk5NH0.LpznYnchhnqQpreQuCnzklyAo0iAZq6gbgm5WcFizmg';
+  const SUPABASE_URL = 'https://dveafqkkrkinfumeghck.supabase.co';
+  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR2ZWFmcWtrcmtpbmZ1bWVnaGNrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA2NDA0MzgsImV4cCI6MjA5NjIxNjQzOH0.v4yQL7cw-CjU6h1ues-H6V7Cb2AZyGESoOeuHVijKk0';
+
+  // ── CLOUDINARY ────────────────────────────────────────────────────────────
+  const CLOUDINARY_CLOUD_NAME = 'dfrzivpf1';
+  const CLOUDINARY_UPLOAD_PRESET = 'bazar_unsigned';
+  const CLOUDINARY_UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
   const TABLE = 'items';
   const API = `${SUPABASE_URL}/rest/v1/${TABLE}`;
   const HEADERS = { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Prefer': 'return=representation' };
@@ -724,6 +729,17 @@
     if (document.getElementById('passwordModal').classList.contains('open')) { closePasswordModal(); }
   });
 
+  // ── CLOUDINARY UPLOAD ─────────────────────────────────────────────────────
+  async function uploadToCloudinary(base64DataUrl) {
+    const formData = new FormData();
+    formData.append('file', base64DataUrl);
+    formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+    const res = await fetch(CLOUDINARY_UPLOAD_URL, { method: 'POST', body: formData });
+    if (!res.ok) throw new Error('Falha no upload da imagem: ' + await res.text());
+    const data = await res.json();
+    return data.secure_url;
+  }
+
   // ── SUPABASE ──────────────────────────────────────────────────────────────
   function setSyncStatus(state, msg) {
     document.getElementById('syncDot').className = 'sync-dot ' + state;
@@ -798,7 +814,12 @@
     btn.disabled = true; btn.textContent = 'Publicando...';
     setSyncStatus('syncing', 'Salvando...');
     try {
-      const newItem = await insertItem({ name, price: donation ? null : price, description: desc, category, phone, image: currentImgData || null, donation, status: 'available' });
+      let imageUrl = null;
+      if (currentImgData) {
+        setSyncStatus('syncing', 'Enviando imagem...');
+        imageUrl = await uploadToCloudinary(currentImgData);
+      }
+      const newItem = await insertItem({ name, price: donation ? null : price, description: desc, category, phone, image: imageUrl, donation, status: 'available' });
       items.unshift(newItem);
       setSyncStatus('ok', 'Publicado ✓');
       render(); clearForm();
@@ -1003,7 +1024,11 @@
       description: document.getElementById('editDesc').value.trim(),
       donation:    document.getElementById('editDonationToggle').checked,
     };
-    if (editImgData) updates.image = editImgData;
+    if (editImgData) {
+      setSyncStatus('syncing', 'Enviando imagem...');
+      const imageUrl = await uploadToCloudinary(editImgData);
+      updates.image = imageUrl;
+    }
     setSyncStatus('syncing', 'Salvando...');
     try {
       await updateItem(id, updates);
