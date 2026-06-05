@@ -42,7 +42,7 @@
     position: relative;
     overflow: hidden;
   }
- 
+
   .header-inner { max-width: 1100px; margin: 0 auto; padding: 52px 32px 48px; position: relative; z-index: 1; }
 
   .header-tag {
@@ -590,11 +590,13 @@
   let   FB_TOKEN   = null;
 
   async function getToken() {
-    if (FB_TOKEN && FB_TOKEN.expires > Date.now()) return FB_TOKEN.token;
+    if (FB_TOKEN && FB_TOKEN.expires > Date.now() + 5000) return FB_TOKEN.token;
     const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FB_API_KEY}`, {
       method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({returnSecureToken:true})
     });
+    if (!r.ok) throw new Error('Auth failed: ' + await r.text());
     const d = await r.json();
+    if (!d.idToken) throw new Error('No token: ' + JSON.stringify(d));
     FB_TOKEN = { token: d.idToken, expires: Date.now() + (parseInt(d.expiresIn)-60)*1000 };
     return FB_TOKEN.token;
   }
