@@ -219,9 +219,6 @@
   .sync-dot.error { background: var(--red); }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
-  .online-indicator { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text2); font-weight: 700; }
-  .online-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex-shrink: 0; animation: pulse 2s infinite; }
-
   /* ── SEARCH & CATEGORY ── */
   .search-bar { max-width: 1100px; margin: 28px auto 0; padding: 0 32px; display: flex; gap: 12px; flex-wrap: wrap; }
   .search-input-wrap { position: relative; flex: 1; min-width: 220px; }
@@ -476,9 +473,7 @@
       <div class="stat"><strong id="soldCount">—</strong>&nbsp;vendidos</div>
     </div>
     <div class="sync-status">
-      <div class="online-indicator" id="onlineIndicator" style="display:none">
-        <div class="online-dot"></div>
-        <span id="onlineCount">1</span>&nbsp;online
+<span id="onlineCount">1</span>&nbsp;online
         <div class="stat-divider" style="margin: 0 4px"></div>
       </div>
       <div class="sync-dot" id="syncDot"></div>
@@ -769,9 +764,14 @@
     setSyncStatus('syncing', 'Carregando...');
     showSkeleton();
     try {
-      const res = await fetch(`${API}?order=created_at.desc`, { headers: HEADERS });
+      const token = await getToken();
+      const res = await fetch(`${FB_BASE}/items?pageSize=200`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
       if (!res.ok) throw new Error(await res.text());
-      items = await res.json();
+      const data = await res.json();
+      const docs = data.documents || [];
+      items = docs.map(fromFS).sort((a,b) => (b.created_at||'').localeCompare(a.created_at||''));
       setSyncStatus('ok', 'Sincronizado ✓');
       render();
     } catch (e) {
@@ -1068,54 +1068,7 @@
   }
 
   // ── PRESENCE (online agora via Firebase RTDB) ────────────────────────────
-  function initPresence() {
-    const visitorId = sessionStorage.getItem('bazar_vid') || (() => {
-      const id = Math.random().toString(36).slice(2) + Date.now().toString(36);
-      sessionStorage.setItem('bazar_vid', id);
-      return id;
-    })();
-
-    const RTDB = `https://${FB_PROJECT}-default-rtdb.firebaseio.com`;
-
-    function updateUI(count) {
-      document.getElementById('onlineCount').textContent = count;
-      document.getElementById('onlineIndicator').style.display = count > 0 ? 'flex' : 'none';
-    }
-
-    async function registerPresence() {
-      try {
-        const token = await getToken();
-        const authHeaders = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' };
-
-        // Write own presence with serverTimestamp via REST
-        await fetch(`${RTDB}/presence/${visitorId}.json?auth=${token}`, {
-          method: 'PUT',
-          body: JSON.stringify({ online: true, t: Date.now() })
-        });
-
-        // Poll count every 30s
-        async function pollCount() {
-          try {
-            const r = await fetch(`${RTDB}/presence.json?shallow=true`);
-            const d = await r.json();
-            updateUI(d ? Object.keys(d).length : 0);
-          } catch(e) {}
-        }
-        pollCount();
-        setInterval(pollCount, 30000);
-
-        // Remove on leave
-        window.addEventListener('beforeunload', () => {
-          navigator.sendBeacon(`${RTDB}/presence/${visitorId}.json?auth=${token}`,
-            new Blob(['null'], {type:'application/json'}));
-        });
-      } catch(e) {}
-    }
-
-    registerPresence();
-  }
-
-  initPresence();
+  loadItems();
   loadItems();
 </script>
 </body>
